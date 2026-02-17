@@ -35,54 +35,49 @@ jobs:
       - name: Clean and Prebuild
         run: |
           rm -rf android
-          npx expo prebuild --platform android
+          npx expo prebuild --platform android --clean
           
       - name: Make gradlew executable
         run: chmod +x android/gradlew
         
-      # Build avec capture d'erreur
       - name: Build APK
-        id: build
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon 2>&1 | tee build.log
-        continue-on-error: true
-        
-      # Afficher les erreurs si build échoue
-      - name: Show errors if failed
-        if: steps.build.outcome == 'failure'
-        run: |
-          echo "=== BUILD FAILED ==="
-          cd android
-          # Chercher les erreurs dans les logs
-          grep -n "error:\|FAILURE:\|Exception\|Could not find\|Task.*failed" build.log | head -30 || true
-          # Afficher les 50 dernières lignes
-          echo "=== LAST 50 LINES ==="
-          tail -50 build.log
+          ./gradlew assembleRelease --no-daemon
           
-      # Vérifier si l'APK existe
-      - name: Check APK exists
-        id: check_apk
+      - name: Find and rename APK
         run: |
+          # Chercher tous les APK
+          echo "=== Searching for APK files ==="
+          find android -name "*.apk" -type f 2>/dev/null | head -20
+          
+          # Créer le dossier de sortie si inexistant
+          mkdir -p android/app/build/outputs/apk/release
+          
+          # Chercher l'APK dans différents emplacements possibles
           if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            echo "APK_FOUND=true" >> $GITHUB_OUTPUT
-            ls -lh android/app/build/outputs/apk/release/
+            echo "Found: app-release.apk"
+          elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            echo "Found: app-release-unsigned.apk, copying..."
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk android/app/build/outputs/apk/release/app-release.apk
           else
-            echo "APK_FOUND=false" >> $GITHUB_OUTPUT
-            echo "=== APK NOT FOUND ==="
-            ls -la android/app/build/outputs/apk/release/ 2>/dev/null || echo "Directory does not exist"
+            # Chercher n'importe quel APK release
+            APK_PATH=$(find android -path "*/release/*.apk" -type f | head -1)
+            if [ -n "$APK_PATH" ]; then
+              echo "Found APK at: $APK_PATH"
+              cp "$APK_PATH" android/app/build/outputs/apk/release/app-release.apk
+            else
+              echo "No APK found!"
+              exit 1
+            fi
           fi
+          
+          # Vérifier
+          ls -lh android/app/build/outputs/apk/release/
           
       - name: Upload APK
         uses: actions/upload-artifact@v4
-        if: steps.check_apk.outputs.APK_FOUND == 'true'
         with:
           name: TCAS5M-APK
           path: android/app/build/outputs/apk/release/app-release.apk
-          
-      - name: Upload logs on failure
-        uses: actions/upload-artifact@v4
-        if: steps.check_apk.outputs.APK_FOUND == 'false'
-        with:
-          name: build-logs
-          path: android/build.log
+          if-no-files-found: error
