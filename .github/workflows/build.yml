@@ -29,38 +29,60 @@ jobs:
           
       - name: Install dependencies
         run: |
-          npm install
+          npm ci
           npm install -g expo-cli
           
-      - name: Prebuild Android
-        run: npx expo prebuild --platform android --no-install
-        
+      - name: Clean and Prebuild
+        run: |
+          rm -rf android
+          npx expo prebuild --platform android
+          
       - name: Make gradlew executable
         run: chmod +x android/gradlew
         
-      # Build avec plus de logs pour voir l'erreur
-      - name: Build APK (with logs)
+      # Build avec capture d'erreur
+      - name: Build APK
+        id: build
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon --stacktrace --info 2>&1 | tee build.log
+          ./gradlew assembleRelease --no-daemon 2>&1 | tee build.log
         continue-on-error: true
         
-      - name: Show error logs
-        if: failure()
+      # Afficher les erreurs si build échoue
+      - name: Show errors if failed
+        if: steps.build.outcome == 'failure'
         run: |
+          echo "=== BUILD FAILED ==="
           cd android
-          cat build.log | grep -i "error\|fail\|exception" | head -50
+          # Chercher les erreurs dans les logs
+          grep -n "error:\|FAILURE:\|Exception\|Could not find\|Task.*failed" build.log | head -30 || true
+          # Afficher les 50 dernières lignes
+          echo "=== LAST 50 LINES ==="
+          tail -50 build.log
+          
+      # Vérifier si l'APK existe
+      - name: Check APK exists
+        id: check_apk
+        run: |
+          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            echo "APK_FOUND=true" >> $GITHUB_OUTPUT
+            ls -lh android/app/build/outputs/apk/release/
+          else
+            echo "APK_FOUND=false" >> $GITHUB_OUTPUT
+            echo "=== APK NOT FOUND ==="
+            ls -la android/app/build/outputs/apk/release/ 2>/dev/null || echo "Directory does not exist"
+          fi
           
       - name: Upload APK
         uses: actions/upload-artifact@v4
-        if: success()
+        if: steps.check_apk.outputs.APK_FOUND == 'true'
         with:
           name: TCAS5M-APK
           path: android/app/build/outputs/apk/release/app-release.apk
           
       - name: Upload logs on failure
         uses: actions/upload-artifact@v4
-        if: failure()
+        if: steps.check_apk.outputs.APK_FOUND == 'false'
         with:
           name: build-logs
           path: android/build.log
