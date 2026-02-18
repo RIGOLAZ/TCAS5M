@@ -22,10 +22,10 @@ jobs:
         with:
           cmdline-tools-version: 9477386
           
-      - name: Setup Node
+      - name: Setup Node 20  # ← CHANGÉ : Node 20 au lieu de 18
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20  # ← CHANGÉ : 20 au lieu de 18
           
       - name: Install dependencies
         run: |
@@ -45,39 +45,15 @@ jobs:
           cd android
           ./gradlew assembleRelease --no-daemon
           
-      - name: Find and rename APK
+      - name: Find and upload APK
         run: |
-          # Chercher tous les APK
-          echo "=== Searching for APK files ==="
-          find android -name "*.apk" -type f 2>/dev/null | head -20
-          
-          # Créer le dossier de sortie si inexistant
-          mkdir -p android/app/build/outputs/apk/release
-          
-          # Chercher l'APK dans différents emplacements possibles
-          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            echo "Found: app-release.apk"
-          elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            echo "Found: app-release-unsigned.apk, copying..."
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk android/app/build/outputs/apk/release/app-release.apk
-          else
-            # Chercher n'importe quel APK release
-            APK_PATH=$(find android -path "*/release/*.apk" -type f | head -1)
-            if [ -n "$APK_PATH" ]; then
-              echo "Found APK at: $APK_PATH"
-              cp "$APK_PATH" android/app/build/outputs/apk/release/app-release.apk
-            else
-              echo "No APK found!"
-              exit 1
-            fi
-          fi
-          
-          # Vérifier
-          ls -lh android/app/build/outputs/apk/release/
+          find android -name "*.apk" -type f | head -5
+          mkdir -p output
+          cp android/app/build/outputs/apk/release/app-release.apk output/TCAS5M.apk || \
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk output/TCAS5M.apk
           
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: TCAS5M-APK
-          path: android/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
+          path: output/TCAS5M.apk
